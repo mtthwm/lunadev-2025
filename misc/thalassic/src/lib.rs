@@ -14,9 +14,11 @@ use gputter::{
 };
 use nalgebra::{Vector2, Vector3};
 use pcl2height::Pcl2Height;
+use height2gradient::Height2Grad;
 
 pub mod depth2pcl;
 pub mod pcl2height;
+pub mod height2gradient;
 
 /// 1. Depths
 /// 2. Transform
@@ -140,5 +142,55 @@ impl ThalassicPipeline {
             .buffers
             .0
             .read(cast_slice_mut(out_heightmap));
+    }
+}
+
+
+#[cfg(test)]
+mod test_height2gradient {
+    use super::*;
+
+    struct GradMapPipeline {
+        pipeline: ComputePipeline<BindGroups, 2>,
+        bind_grps: BindGroups,
+    }
+    struct GradMapPipelineBuilder {
+        heightmap: Vec<f32>,
+    }
+    impl GradMapPipelineBuilder {
+        pub fn build(self, cell_count: u32, width: u32) -> GradMapPipeline {
+            let bind_grps = (
+                GpuBufferSet::from((StorageBuffer::new_dyn(cell_count as usize).unwrap(),)),
+                GpuBufferSet::from((StorageBuffer::new_dyn(cell_count as usize).unwrap(),)),
+            );
+    
+            let [grad_fn] = Height2Grad {
+                original_heightmap: BufferGroupBinding::<_, BindGroups>::get::<0, 0>(),
+                gradient_map: BufferGroupBinding::<_, BindGroups>::get::<1, 0>(),
+                cell_count: NonZeroU32::new(cell_count).unwrap(),
+                heightmap_width: NonZeroU32::new(width).unwrap(),
+                cell_size: 1.0,
+                
+            }
+            .compile();
+    
+            let mut pipeline = ComputePipeline::new([&grad_fn]);
+            pipeline.workgroups = [
+                Vector3::new(
+                    width as u32,
+                    (cell_count / width) as u32,
+                    1,
+                )
+            ];
+            GradMapPipeline {
+                pipeline,
+                bind_grps,
+            }  
+        }
+    }
+
+    #[test]
+    fn basic_grad_map() {
+        assert_eq!(true, false);
     }
 }
