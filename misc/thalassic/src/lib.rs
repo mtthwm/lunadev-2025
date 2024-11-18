@@ -19,6 +19,8 @@ use height2gradient::Height2Grad;
 pub mod depth2pcl;
 pub mod pcl2height;
 pub mod height2gradient;
+mod clustering;
+pub use clustering::Clusterer;
 
 /// 1. Depths
 /// 2. Transform

@@ -22,15 +22,11 @@ use super::{create_packet_builder, create_robot_chain, wait_for_ctrl_c};
 #[derive(Serialize, Deserialize)]
 pub struct LunabotApp {
     pub lunabase_address: SocketAddr,
-    #[serde(default = "default_max_pong_delay_ms")]
+    #[serde(default = "super::default_max_pong_delay_ms")]
     pub max_pong_delay_ms: u64,
 }
 
-fn default_max_pong_delay_ms() -> u64 {
-    1500
-}
-
-const PROJECTION_SIZE: Vector2<u32> = Vector2::new(36, 24);
+// const PROJECTION_SIZE: Vector2<u32> = Vector2::new(36, 24);
 
 impl Application for LunabotApp {
     const APP_NAME: &'static str = "main";

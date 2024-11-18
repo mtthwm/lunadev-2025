@@ -125,19 +125,19 @@ impl INode for LunabotConn {
                         FromLunabot::Ping(stage) => {
                             match stage {
                                 LunabotStage::TeleOp => {
-                                    self.base_mut().emit_signal("entered_manual".into(), &[])
+                                    self.base_mut().emit_signal("entered_manual", &[])
                                 }
                                 LunabotStage::SoftStop => {
-                                    self.base_mut().emit_signal("entered_soft_stop".into(), &[])
+                                    self.base_mut().emit_signal("entered_soft_stop", &[])
                                 }
                                 LunabotStage::TraverseObstacles => self
                                     .base_mut()
-                                    .emit_signal("entered_traverse_obstacles".into(), &[]),
+                                    .emit_signal("entered_traverse_obstacles", &[]),
                                 LunabotStage::Dig => {
-                                    self.base_mut().emit_signal("entered_dig".into(), &[])
+                                    self.base_mut().emit_signal("entered_dig", &[])
                                 }
                                 LunabotStage::Dump => {
-                                    self.base_mut().emit_signal("entered_dump".into(), &[])
+                                    self.base_mut().emit_signal("entered_dump", &[])
                                 }
                             };
                             inner = self.inner.as_mut().unwrap();
@@ -245,7 +245,7 @@ impl INode for LunabotConn {
 
             if received {
                 self.base_mut()
-                    .emit_signal("something_received".into(), &[]);
+                    .emit_signal("something_received", &[]);
             }
         }
     }
@@ -298,10 +298,8 @@ impl LunabotConn {
     #[signal]
     fn entered_dump(&self);
 
-    #[func]
-    fn set_steering(&mut self, drive: f64, steering: f64) {
+    fn set_steering(&mut self, new_steering: Steering) {
         if let Some(inner) = &mut self.inner {
-            let new_steering = Steering::new(drive, steering);
             let mut last_steering_reliable_idx = None;
             if let Some((old_steering, old_idx)) = inner.last_steering {
                 last_steering_reliable_idx = Some(old_idx);
@@ -327,6 +325,16 @@ impl LunabotConn {
                 }
             }
         }
+    }
+
+    #[func]
+    fn set_steering_drive_steering(&mut self, drive: f64, steering: f64) {
+        self.set_steering(Steering::new(drive, steering));
+    }
+
+    #[func]
+    fn set_steering_left_right(&mut self, left: f64, right: f64) {
+        self.set_steering(Steering::new_left_right(left, right));
     }
 
     #[func]
