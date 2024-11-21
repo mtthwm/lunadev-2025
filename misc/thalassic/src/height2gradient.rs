@@ -26,17 +26,15 @@ build_shader!(
         if (ix == HEIGHTMAP_WIDTH-1 || iy == HEIGHTMAP_WIDTH-1) {
             gradient_map[index] = INF;
         } else {
-            let eastIndex = coord_to_index(ix + 1, iy);
-            let southIndex = coord_to_index(ix, iy + 1);
+            let posXIndex = coord_to_index(ix + 1, iy);
+            let posYIndex = coord_to_index(ix, iy + 1);
 
-            // TODO: IMPROVE THIS TERMINOLOGY (-Z should be forward, but this function assumes z is up)
-
-            let dzdx = original_heightmap[eastIndex] - original_heightmap[index];
-            let dzdy = original_heightmap[southIndex] - original_heightmap[index];
+            let dydx = original_heightmap[posXIndex] - original_heightmap[index];
+            let dydz = original_heightmap[posYIndex] - original_heightmap[index];
             
-            let gradx = dzdx / CELL_SIZE;
-            let grady = dzdy / CELL_SIZE;
-            let gradMag = sqrt(gradx*gradx + grady*grady);
+            let gradx = dydx / CELL_SIZE;
+            let gradz = dydz / CELL_SIZE;
+            let gradMag = sqrt(gradx*gradx + gradz*gradz);
 
             gradient_map[index] = gradMag;
         }
