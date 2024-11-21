@@ -218,11 +218,45 @@ mod test_height2gradient {
 
     #[test]
     fn basic_grad_map() {
-        let mut original: [f32; 9] = [0.0; 9];
-        let expected: [f32; 9] = [1.0; 9];
+        const INF: f32 = 3.0e38;
+        let mut original: [f32; 9] = [
+            1.0, 0.0, 1.0,
+            1.0, 0.0, 1.0,
+            1.0, 0.0, 1.0
+        ];
+        let expected: [f32; 9] = [
+            1.0, 1.0, INF,
+            1.0, 1.0, INF,
+            INF, INF, INF
+        ];
         let mut gradients: [f32; 9] = [0.0; 9];
         let _ = init_gputter_blocking();
         let mut pipeline = GradMapTestPipeline::build(9, 3);
+        pipeline.provide_heights(&mut original, &mut gradients);
+
+        assert_eq!(gradients, expected);
+    }
+
+    #[test]
+    fn diagonal_grad_map() {
+        const INF: f32 = 3.0e38;
+        const RT2: f32 = 1.41421356237;
+
+        let mut original: [f32; 16] = [
+            0.0, 1.0, 2.0, 3.0,
+            1.0, 2.0, 3.0, 4.0,
+            2.0, 3.0, 4.0, 5.0,
+            3.0, 4.0, 5.0, 6.0
+        ];
+        let expected: [f32; 16] = [
+            RT2, RT2, RT2, INF,
+            RT2, RT2, RT2, INF,
+            RT2, RT2, RT2, INF,
+            INF, INF, INF, INF
+        ];
+        let mut gradients: [f32; 16] = [0.0; 16];
+        let _ = init_gputter_blocking();
+        let mut pipeline = GradMapTestPipeline::build(16, 4);
         pipeline.provide_heights(&mut original, &mut gradients);
 
         assert_eq!(gradients, expected);
