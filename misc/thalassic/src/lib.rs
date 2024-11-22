@@ -4,7 +4,7 @@ use bytemuck::cast_slice_mut;
 use depth2pcl::Depth2Pcl;
 use gputter::{
     buffers::{
-        storage::{HostReadOnly, HostWriteOnly, ShaderReadOnly, ShaderReadWrite, StorageBuffer},
+        storage::{HostReadOnly, HostWriteOnly, ShaderReadOnly, ShaderReadWrite, StorageBuffer, HostReadWrite},
         uniform::UniformBuffer,
         GpuBufferSet,
     },
@@ -33,16 +33,19 @@ type DepthBindGrp = (
 type PointsBindGrp = (StorageBuffer<[AlignedVec4<f32>], HostReadOnly, ShaderReadWrite>,);
 
 /// Heightmap used by pcl2height and height2grad
-type HeightMapBindGrp = (StorageBuffer<[u32], HostReadOnly, ShaderReadWrite>,);
+type HeightMapBindGrp = (StorageBuffer<[u32], HostReadWrite, ShaderReadWrite>,);
 
 /// Original heightmap used by pcl2height
 type PclBindGrp = (StorageBuffer<[f32], HostWriteOnly, ShaderReadOnly>,);
+
+type GradBindGrp = (StorageBuffer<[f32], HostReadOnly, ShaderReadWrite>,);
 
 type BindGroups = (
     GpuBufferSet<DepthBindGrp>,
     GpuBufferSet<PointsBindGrp>,
     GpuBufferSet<HeightMapBindGrp>,
     GpuBufferSet<PclBindGrp>,
+    GpuBufferSet<GradBindGrp>,
 );
 
 #[derive(Debug, Clone, Copy)]
@@ -65,6 +68,7 @@ impl ThalassicBuilder {
                 UniformBuffer::new(),
             )),
             GpuBufferSet::from((StorageBuffer::new_dyn(self.pixel_count.get() as usize).unwrap(),)),
+            GpuBufferSet::from((StorageBuffer::new_dyn(self.cell_count.get() as usize).unwrap(),)),
             GpuBufferSet::from((StorageBuffer::new_dyn(self.cell_count.get() as usize).unwrap(),)),
             GpuBufferSet::from((StorageBuffer::new_dyn(self.cell_count.get() as usize).unwrap(),)),
         );
@@ -93,7 +97,16 @@ impl ThalassicBuilder {
         }
         .compile();
 
-        let mut pipeline = ComputePipeline::new([&depth_fn, &height_fn]);
+        let [grad_fn] = Height2Grad {
+            original_heightmap: BufferGroupBinding::<StorageBuffer<[u32], _, _>, BindGroups>::get::<2, 0>(),
+            gradient_map: BufferGroupBinding::<StorageBuffer<[f32], _, _>, BindGroups>::get::<4, 0>(),
+            cell_count: self.cell_count,
+            heightmap_width: self.heightmap_width,
+            cell_size: self.cell_size,
+        }
+        .compile();
+
+        let mut pipeline = ComputePipeline::new([&depth_fn, &height_fn, &grad_fn]);
         pipeline.workgroups = [
             Vector3::new(
                 self.image_width.get(),
@@ -105,6 +118,11 @@ impl ThalassicBuilder {
                 self.cell_count.get() / self.heightmap_width,
                 2 * (self.image_width.get() - 1) * (self.pixel_count.get() / self.image_width - 1),
             ),
+            Vector3::new(
+                self.image_width.get(),
+                self.pixel_count.get() / self.image_width,
+                1,
+            ),
         ];
         ThalassicPipeline {
             pipeline,
@@ -114,7 +132,7 @@ impl ThalassicBuilder {
 }
 
 pub struct ThalassicPipeline {
-    pipeline: ComputePipeline<BindGroups, 2>,
+    pipeline: ComputePipeline<BindGroups, 3>,
     bind_grps: BindGroups,
 }
 
@@ -160,11 +178,8 @@ mod test_height2gradient {
         bind_grps: GradTestBindGroups,
     }
 
-    type HeightBindGrp = (StorageBuffer<[u32], HostWriteOnly, ShaderReadOnly>,);
-    type GradBindGrp = (StorageBuffer<[f32], HostReadOnly, ShaderReadWrite>,);
-
     type GradTestBindGroups = (
-        GpuBufferSet<HeightBindGrp>,
+        GpuBufferSet<HeightMapBindGrp>,
         GpuBufferSet<GradBindGrp>,
     );
 

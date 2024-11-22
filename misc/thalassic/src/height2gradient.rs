@@ -10,7 +10,7 @@ build_shader!(
 
     const INF = 3e38;
 
-    #[buffer(HostWriteOnly)] var<storage, read> original_heightmap: array<atomic<u32>, CELL_COUNT>;
+    #[buffer(HostReadWrite)] var<storage, read_write> original_heightmap: array<atomic<u32>, CELL_COUNT>;
     #[buffer(HostReadOnly)] var<storage, read_write> gradient_map: array<f32, CELL_COUNT>;
 
     fn coord_to_index (x: u32, y: u32) -> u32  {
