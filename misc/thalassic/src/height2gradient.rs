@@ -10,7 +10,7 @@ build_shader!(
 
     const INF = 3e38;
 
-    #[buffer(HostWriteOnly)] var<storage, read> original_heightmap: array<f32, CELL_COUNT>;
+    #[buffer(HostWriteOnly)] var<storage, read> original_heightmap: array<atomic<u32>, CELL_COUNT>;
     #[buffer(HostReadOnly)] var<storage, read_write> gradient_map: array<f32, CELL_COUNT>;
 
     fn coord_to_index (x: u32, y: u32) -> u32  {
@@ -27,10 +27,14 @@ build_shader!(
             gradient_map[index] = INF;
         } else {
             let posXIndex = coord_to_index(ix + 1, iy);
-            let posYIndex = coord_to_index(ix, iy + 1);
+            let posZIndex = coord_to_index(ix, iy + 1);
 
-            let dydx = original_heightmap[posXIndex] - original_heightmap[index];
-            let dydz = original_heightmap[posYIndex] - original_heightmap[index];
+            let currentHeight = bitcast<f32>(atomicLoad(&original_heightmap[index]));
+            let posXHeight = bitcast<f32>(atomicLoad(&original_heightmap[posXIndex]));
+            let posZHeight = bitcast<f32>(atomicLoad(&original_heightmap[posZIndex]));
+
+            let dydx = posXHeight - currentHeight;
+            let dydz = posZHeight - currentHeight;
             
             let gradx = dydx / CELL_SIZE;
             let gradz = dydz / CELL_SIZE;

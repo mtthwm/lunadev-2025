@@ -151,6 +151,7 @@ impl ThalassicPipeline {
 #[cfg(test)]
 mod test_height2gradient {
     use gputter::init_gputter_blocking;
+    use bytemuck::cast_slice;
 
     use super::*;
 
@@ -159,7 +160,7 @@ mod test_height2gradient {
         bind_grps: GradTestBindGroups,
     }
 
-    type HeightBindGrp = (StorageBuffer<[f32], HostWriteOnly, ShaderReadOnly>,);
+    type HeightBindGrp = (StorageBuffer<[u32], HostWriteOnly, ShaderReadOnly>,);
     type GradBindGrp = (StorageBuffer<[f32], HostReadOnly, ShaderReadWrite>,);
 
     type GradTestBindGroups = (
@@ -168,7 +169,7 @@ mod test_height2gradient {
     );
 
     impl GradMapTestPipeline {
-        pub fn build(cell_count: u32, width: u32) -> GradMapTestPipeline {
+        pub fn build(cell_count: u32, width: u32, cell_size: f32) -> GradMapTestPipeline {
             let height_buff = StorageBuffer::new_dyn(cell_count as usize).unwrap();
             let grad_buff = StorageBuffer::new_dyn(cell_count as usize).unwrap();
             let bind_grps: GradTestBindGroups = (
@@ -177,11 +178,11 @@ mod test_height2gradient {
             );
 
             let [grad_fn] = Height2Grad {
-                original_heightmap: BufferGroupBinding::<StorageBuffer<[f32], _, _>, GradTestBindGroups>::get::<0, 0>(),
+                original_heightmap: BufferGroupBinding::<StorageBuffer<[u32], _, _>, GradTestBindGroups>::get::<0, 0>(),
                 gradient_map: BufferGroupBinding::<StorageBuffer<[f32], _, _>, GradTestBindGroups>::get::<1, 0>(),
                 cell_count: NonZeroU32::new(cell_count).unwrap(),
                 heightmap_width: NonZeroU32::new(width).unwrap(),
-                cell_size: 1.0,
+                cell_size: cell_size,
             }
             .compile();
 
@@ -208,7 +209,7 @@ mod test_height2gradient {
         ) {
             self.pipeline
                 .new_pass(|mut lock| {
-                    self.bind_grps.0.write::<0, _>(heights, &mut lock);
+                    self.bind_grps.0.write::<0, _>(cast_slice(heights), &mut lock);
                     &mut self.bind_grps
                 })
                 .finish();
@@ -231,7 +232,7 @@ mod test_height2gradient {
         ];
         let mut gradients: [f32; 9] = [0.0; 9];
         let _ = init_gputter_blocking();
-        let mut pipeline = GradMapTestPipeline::build(9, 3);
+        let mut pipeline = GradMapTestPipeline::build(9, 3, 1.0);
         pipeline.provide_heights(&mut original, &mut gradients);
 
         assert_eq!(gradients, expected);
@@ -256,7 +257,28 @@ mod test_height2gradient {
         ];
         let mut gradients: [f32; 16] = [0.0; 16];
         let _ = init_gputter_blocking();
-        let mut pipeline = GradMapTestPipeline::build(16, 4);
+        let mut pipeline = GradMapTestPipeline::build(16, 4, 1.0);
+        pipeline.provide_heights(&mut original, &mut gradients);
+
+        assert_eq!(gradients, expected);
+    }
+
+    #[test]
+    fn non_one_cell_size() {
+        const INF: f32 = 3.0e38;
+        let mut original: [f32; 9] = [
+            1.0, 0.0, 1.0,
+            1.0, 0.0, 1.0,
+            1.0, 0.0, 1.0
+        ];
+        let expected: [f32; 9] = [
+            0.5, 0.5, INF,
+            0.5, 0.5, INF,
+            INF, INF, INF
+        ];
+        let mut gradients: [f32; 9] = [0.0; 9];
+        let _ = init_gputter_blocking();
+        let mut pipeline = GradMapTestPipeline::build(9, 3, 2.0);
         pipeline.provide_heights(&mut original, &mut gradients);
 
         assert_eq!(gradients, expected);
