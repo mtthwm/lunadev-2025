@@ -10,7 +10,6 @@ members = [
     "urobotics/urobotics-camera",
     "urobotics/urobotics-py",
     "urobotics/urobotics-apriltag",
-    "urobotics/urobotics-realsense",
     "misc/tasker",
     "lunabotics/lunabot",
     "lunabotics/common",
@@ -19,7 +18,7 @@ members = [
     "lunabotics/lunabase-lib",
     "lunabotics/lunasim-lib",
     "misc/k",
-    "lunabotics/lunabot-ai", "misc/ares-bt", "misc/cakap2", "misc/recycler", "misc/gputter-core", "misc/gputter-macros", "misc/gputter", "misc/thalassic", "mouser/mouser-host",
+    "lunabotics/lunabot-ai", "misc/ares-bt", "misc/cakap2", "misc/recycler", "misc/gputter-core", "misc/gputter-macros", "misc/gputter", "misc/thalassic", "mouser/mouser-host", "lunaserver-web/lunaserver-web-host", "lunaserver-web/lunaserver-web-client",
 ]
 resolver = "2"
 exclude = ["publishing/", "dump/", "lunabotics/lunabase/", "camera-db/", "mouser/mouser-web"]
@@ -77,7 +76,6 @@ urobotics-video = { path = "urobotics/urobotics-video" }
 urobotics = { path = "urobotics/urobotics" }
 urobotics-camera = { path = "urobotics/urobotics-camera" }
 urobotics-py = { path = "urobotics/urobotics-py" }
-urobotics-realsense = { path = "urobotics/urobotics-realsense" }
 urobotics-apriltag = { path = "urobotics/urobotics-apriltag" }
 tasker = { path = "misc/tasker" }
 cakap2 = { path = "misc/cakap2" }
@@ -87,6 +85,7 @@ thiserror = "1.0.64"
 recycler = { path = "misc/recycler" }
 gputter = { path = "misc/gputter" }
 thalassic = { path = "misc/thalassic" }
+axum = { version = "0.7.7", features = ["ws"] }
 
 [profile.dev.package.lunabot]
 opt-level = 3
@@ -97,5 +96,10 @@ opt-level = 3
 [profile.dev.package.lunabase-lib]
 opt-level = 3
 
+[profile.release.package.lunabase-lib]
+debug = true
+debug-assertions = true
+
 [profile.release.package.lunabot]
 debug = true
+debug-assertions = true

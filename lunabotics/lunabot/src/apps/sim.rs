@@ -1,6 +1,11 @@
 use core::str;
 use std::{
-    cmp::Ordering, collections::VecDeque, net::SocketAddr, process::Stdio, sync::{Arc, Mutex}
+    cmp::Ordering,
+    collections::VecDeque,
+    net::SocketAddr,
+    num::NonZeroU32,
+    process::Stdio,
+    sync::{Arc, Mutex},
 };
 
 use common::{
@@ -8,13 +13,17 @@ use common::{
     LunabotStage,
 };
 use crossbeam::atomic::AtomicCell;
-use gputter::init_gputter_blocking;
+use gputter::{
+    init_gputter_blocking,
+    types::{AlignedMatrix4, AlignedVec4},
+};
 use lunabot_ai::{run_ai, Action, Input, PollWhen};
-use nalgebra::{Isometry3, UnitQuaternion, UnitVector3, Vector2, Vector3};
+use nalgebra::{Isometry3, UnitQuaternion, UnitVector3, Vector2, Vector3, Vector4};
 use serde::{Deserialize, Serialize};
-use urobotics::tokio;
+use thalassic::DepthProjectorBuilder;
+use urobotics::{app::define_app, log::{log_to_console, Level}, tokio};
 use urobotics::{
-    app::Application,
+    app::Runnable,
     callbacks::caller::CallbacksStorage,
     define_callbacks, fn_alias, get_tokio_handle,
     log::{error, warn},
@@ -26,11 +35,12 @@ use urobotics::{
     BlockOn,
 };
 
-use crate::{localization::Localizer, pipelines::thalassic::spawn_thalassic_pipeline};
-
-use super::{
-    create_packet_builder, create_robot_chain, log_teleop_messages, wait_for_ctrl_c,
+use crate::{
+    localization::Localizer,
+    pipelines::thalassic::{spawn_thalassic_pipeline, PointsStorageChannel},
 };
+
+use super::{create_packet_builder, create_robot_chain, log_teleop_messages, wait_for_ctrl_c};
 
 fn_alias! {
     pub type FromLunasimRef = CallbacksRef(FromLunasim) + Send
@@ -77,14 +87,10 @@ pub struct LunasimbotApp {
     simulation_command: Vec<String>,
 }
 
-const PROJECTION_SIZE: Vector2<u32> = Vector2::new(36, 24);
-
-impl Application for LunasimbotApp {
-    const APP_NAME: &'static str = "sim";
-
-    const DESCRIPTION: &'static str = "The lunabot application in a simulated environment";
+impl Runnable for LunasimbotApp {
 
     fn run(mut self) {
+        log_to_console([("wgpu_hal::vulkan::instance", Level::Info), ("wgpu_core::device::resource", Level::Info)]);
         log_teleop_messages();
         if let Err(e) = init_gputter_blocking() {
             error!("Failed to initialize gputter: {e}");
@@ -216,8 +222,20 @@ impl Application for LunasimbotApp {
         std::thread::spawn(|| localizer.run());
 
         let camera_link = robot_chain.find_link("depth_camera_link").unwrap().clone();
-        let (depth_map_buffer, pcl_callbacks, heightmap_callbacks) =
-            spawn_thalassic_pipeline(10.392, 0.01, PROJECTION_SIZE, camera_link);
+
+        let depth_projecter_builder = DepthProjectorBuilder {
+            image_size: Vector2::new(NonZeroU32::new(36).unwrap(), NonZeroU32::new(24).unwrap()),
+            focal_length_px: 10.392,
+            principal_point_px: Vector2::new(17.5, 11.5),
+        };
+        let mut point_cloud: Box<[_]> =
+            std::iter::repeat_n(AlignedVec4::from(Vector4::default()), 36 * 24).collect();
+        let mut depth_projecter = depth_projecter_builder.build();
+        let pcl_storage = depth_projecter_builder.make_points_storage();
+        let pcl_storage_channel = Arc::new(PointsStorageChannel::new_for(&pcl_storage));
+        pcl_storage_channel.set_projected(pcl_storage);
+        let (heightmap_callbacks,) =
+            spawn_thalassic_pipeline(Box::new([pcl_storage_channel.clone()]));
 
         let axis_angle = |axis: [f32; 3], angle: f32| {
             let axis = UnitVector3::new_normalize(Vector3::new(
@@ -230,15 +248,8 @@ impl Application for LunasimbotApp {
         };
 
         let lunasim_stdin2 = lunasim_stdin.clone();
-        let mut bitcode_buffer = bitcode::Buffer::new();
-        pcl_callbacks.add_dyn_fn_mut(Box::new(move |point_cloud| {
-            let msg =
-                FromLunasimbot::PointCloud(point_cloud.iter().map(|p| [p.x, p.y, p.z]).collect());
-            let bytes = bitcode_buffer.encode(&msg);
-            lunasim_stdin2.write(bytes);
-        }));
 
-        from_lunasim_ref.add_fn(move |msg| match msg {
+        from_lunasim_ref.add_fn_mut(move |msg| match msg {
             common::lunasim::FromLunasim::Accelerometer {
                 id: _,
                 acceleration,
@@ -254,8 +265,24 @@ impl Application for LunasimbotApp {
                 localizer_ref.set_angular_velocity(axis_angle(axis, angle));
             }
             common::lunasim::FromLunasim::DepthMap(depths) => {
-                depth_map_buffer.write(|buffer| {
-                    buffer.copy_from_slice(&depths);
+                let Some(camera_transform) = camera_link.world_transform() else {
+                    return;
+                };
+                let camera_transform: AlignedMatrix4<f32> =
+                    camera_transform.to_homogeneous().cast::<f32>().into();
+                let Some(mut pcl_storage) = pcl_storage_channel.get_finished() else {
+                    return;
+                };
+                pcl_storage = depth_projecter.project(&depths, &camera_transform, pcl_storage, 0.01);
+                pcl_storage.read(&mut point_cloud);
+                pcl_storage_channel.set_projected(pcl_storage);
+                let msg = FromLunasimbot::PointCloud(
+                    point_cloud.iter().map(|p| [p.x, p.y, p.z]).collect(),
+                );
+                let lunasim_stdin2 = lunasim_stdin2.clone();
+                rayon::spawn(move || {
+                    let bytes = bitcode::encode(&msg);
+                    lunasim_stdin2.write(&bytes);
                 });
             }
             common::lunasim::FromLunasim::ExplicitApriltag {
@@ -380,3 +407,5 @@ impl Application for LunasimbotApp {
         wait_for_ctrl_c();
     }
 }
+
+define_app!(pub Sim(LunasimbotApp):  "The lunabot application in a simulated environment");

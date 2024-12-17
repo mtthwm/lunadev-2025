@@ -39,7 +39,7 @@ impl<T> MonoQueue<T> {
     fn get(&self) -> T {
         let mut lock = self.data.lock();
         if lock.is_none() {
-            self.condvar.wait(&mut lock);
+            self.condvar.wait_while(&mut lock, |inner| inner.is_none());
         }
         unsafe { lock.take().unwrap_unchecked() }
     }
@@ -380,6 +380,36 @@ impl<T> LoanedData<T> {
                 callbacks: callbacks.read(),
                 lendees: lendees.read(),
             }
+        }
+    }
+
+    /// Waits for other threads to drop their ownership of the data.
+    pub fn try_recall(self) -> Result<OwnedData<T>, Self> {
+        for lendee in &self.lendees {
+            lendee.try_clear();
+        }
+        {
+            let lock = self.inner.released_mut.lock();
+            if Arc::strong_count(&self.inner) > 1 {
+                drop(lock);
+                return Err(self);
+            }
+        }
+
+        unsafe {
+            let tmp = MaybeUninit::new(self);
+            let tmp = tmp.as_ptr();
+            let inner = &raw const (*tmp).inner;
+            let callbacks = &raw const (*tmp).callbacks;
+            let data_handle = &raw const (*tmp).data_handle;
+            let lendees = &raw const (*tmp).lendees;
+
+            Ok(OwnedData {
+                inner: inner.read(),
+                data_handle: data_handle.read(),
+                callbacks: callbacks.read(),
+                lendees: lendees.read(),
+            })
         }
     }
 
